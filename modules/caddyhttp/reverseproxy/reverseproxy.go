@@ -576,6 +576,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	repl.Set("http.reverse_proxy.upstream.port", dialInfo.Port)
 	repl.Set("http.reverse_proxy.upstream.requests", upstream.Host.NumRequests())
 	repl.Set("http.reverse_proxy.upstream.max_requests", upstream.MaxRequests)
+	repl.Set("http.reverse_proxy.upstream.successes", upstream.Host.Successes())
 	repl.Set("http.reverse_proxy.upstream.fails", upstream.Host.Fails())
 
 	// mutate request headers according to this upstream;
@@ -594,6 +595,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	if proxyErr == nil || errors.Is(proxyErr, context.Canceled) {
 		// context.Canceled happens when the downstream client
 		// cancels the request, which is not our failure
+		h.countSuccess(upstream)
 		return true, nil
 	}
 
@@ -602,6 +604,7 @@ func (h *Handler) proxyLoopIteration(r *http.Request, origReq *http.Request, w h
 	// occur after the roundtrip if, for example, a response handler
 	// after the roundtrip returns an error)
 	if succ, ok := proxyErr.(roundtripSucceeded); ok {
+		h.countSuccess(upstream)
 		return true, succ.error
 	}
 
