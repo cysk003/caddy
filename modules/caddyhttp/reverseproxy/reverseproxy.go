@@ -158,6 +158,19 @@ type Handler struct {
 	// could be useful if the backend has tighter memory constraints.
 	ResponseBuffers int64 `json:"response_buffers,omitempty"`
 
+	// If nonzero, streaming requests such as WebSockets will be
+	// forcibly closed at the end of the timeout. Default: no timeout.
+	StreamTimeout caddy.Duration `json:"stream_timeout,omitempty"`
+
+	// If nonzero, streaming requests such as WebSockets will not be
+	// closed when the proxy config is unloaded, and instead the stream
+	// will remain open until the delay is complete. In other words,
+	// enabling this prevents streams from closing when Caddy's config
+	// is reloaded. Enabling this may be a good idea to avoid a thundering
+	// herd of reconnecting clients which had their connections closed
+	// by the previous config closing. Default: no delay.
+	StreamCloseDelay caddy.Duration `json:"stream_close_delay,omitempty"`
+
 	// If configured, rewrites the copy of the upstream request.
 	// Allows changing the request method and URI (path and query).
 	// Since the rewrite is applied to the copy, it does not persist
@@ -446,9 +459,18 @@ func (h *Handler) Cleanup() error {
 			// this is potentially blocking while we have the lock on the connections
 			// map, but that should be OK since the server has in theory shut down
 			// and we are no longer using the connections map
-			gracefulErr := oc.gracefulClose()
-			if gracefulErr != nil && err == nil {
-				err = gracefulErr
+			if h.StreamCloseDelay != 0 {
+				time.AfterFunc(time.Duration(h.StreamCloseDelay), func() {
+					gracefulErr := oc.gracefulClose()
+					if gracefulErr != nil && err == nil {
+						err = gracefulErr
+					}
+				})
+			} else {
+				gracefulErr := oc.gracefulClose()
+				if gracefulErr != nil && err == nil {
+					err = gracefulErr
+				}
 			}
 		}
 		closeErr := oc.conn.Close()

@@ -21,6 +21,7 @@ package reverseproxy
 import (
 	"context"
 	"io"
+	"math"
 	weakrand "math/rand"
 	"mime"
 	"net/http"
@@ -119,10 +120,19 @@ func (h Handler) handleUpgradeResponse(logger *zap.Logger, rw http.ResponseWrite
 
 	spc := switchProtocolCopier{user: conn, backend: backConn}
 
+	// If no timeout, set it to infinity
+	timeout := time.Duration(h.StreamTimeout)
+	if h.StreamTimeout == 0 {
+		timeout = math.MaxInt64
+	}
+
 	errc := make(chan error, 1)
 	go spc.copyToBackend(errc)
 	go spc.copyFromBackend(errc)
-	<-errc
+	select {
+	case <-time.After(timeout):
+	case <-errc:
+	}
 }
 
 // flushInterval returns the p.FlushInterval value, conditionally
